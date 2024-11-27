@@ -15,17 +15,23 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
         include:
           - os: ubuntu-latest
             artifact_name: proxier
             asset_name: proxier-linux-amd64
+            target: x86_64-unknown-linux-gnu
           - os: windows-latest
             artifact_name: proxier.exe
             asset_name: proxier-windows-amd64.exe
+            target: x86_64-pc-windows-msvc
           - os: macos-latest
             artifact_name: proxier
             asset_name: proxier-macos-amd64
+            target: x86_64-apple-darwin
+          - os: ubuntu-latest
+            artifact_name: proxier
+            asset_name: proxier-android-arm64
+            target: aarch64-linux-android
 
     steps:
     - uses: actions/checkout@v3
@@ -35,16 +41,33 @@ jobs:
       with:
         profile: minimal
         toolchain: stable
+        target: ${{ matrix.target }}
         override: true
     
+    - name: Install Android NDK
+      if: matrix.target == 'aarch64-linux-android'
+      uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: r25b
+        add-to-path: false
+    
     - name: Build
-      run: cargo build --release
+      run: |
+        if [ "${{ matrix.target }}" = "aarch64-linux-android" ]; then
+          export ANDROID_NDK_HOME=$ANDROID_NDK_ROOT
+          export PATH=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
+          cargo build --release --target aarch64-linux-android
+        else
+          cargo build --release --target ${{ matrix.target }}
+        fi
+      shell: bash
       
     - name: Run tests
-      run: cargo test --verbose
+      if: matrix.target != 'aarch64-linux-android'
+      run: cargo test --verbose --target ${{ matrix.target }}
       
     - name: Upload artifacts
       uses: actions/upload-artifact@v3
       with:
         name: ${{ matrix.asset_name }}
-        path: target/release/${{ matrix.artifact_name }}
+        path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
